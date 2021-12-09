@@ -21,7 +21,10 @@ namespace FFLogsLookup
             {
                 try
                 {
-                    var commands = method.GetCustomAttribute<CommandAttribute>().Commands;
+                    var commandsAttr = method.GetCustomAttribute<CommandAttribute>();
+                    if (commandsAttr == null) continue;
+                    
+                    var commands = commandsAttr.Commands;
                     var help = method.GetCustomAttribute<HelpMessageAttribute>().HelpMessage;
                     var showInHelp = method.GetCustomAttribute<ShowInHelpAttribute>()?.ShowInHelp ?? false;
 
@@ -108,23 +111,7 @@ namespace FFLogsLookup
         [ShowInHelp(true)]
         private void ViewParty(string command, string args)
         {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            this.plugin.WindowParty.IsOpen = true;
         }
 
         public class CommandAttribute : Attribute

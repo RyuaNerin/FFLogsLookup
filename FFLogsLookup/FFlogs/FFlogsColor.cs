@@ -5,7 +5,7 @@ namespace FFLogsLookup.FFlogs
 {
     internal static class FFlogsColor
     {
-        public static Vector4 C(this GameJob gameJob)
+        public static Vector4 GetJobColor(this GameJob gameJob)
         {
             return gameJob switch
             {

@@ -53,7 +53,7 @@ namespace FFLogsLookup.FFlogs
             var partitionDic = new Dictionary<string, FFlogsPartition>
             {
                 { "Ne", FFlogsPartition.GameNonEcho },
-                { "Ec", FFlogsPartition.GameEcho },
+                //{ "Ec", FFlogsPartition.GameEcho },
             };
 
             var flags = BindingFlags.GetProperty | BindingFlags.Instance | BindingFlags.Public;
@@ -65,7 +65,7 @@ namespace FFLogsLookup.FFlogs
                 {
                     foreach (var job in Enum.GetValues<GameJob>())
                     {
-                        if (job == GameJob.Best) continue;
+                        if (job == GameJob.Best || job == GameJob.None) continue;
 
                         var epi = new EncounterPropertyInfo
                         {
@@ -95,7 +95,7 @@ namespace FFLogsLookup.FFlogs
             {
                 foreach (var job in Enum.GetValues<GameJob>())
                 {
-                    if (job == GameJob.Best) continue;
+                    if (job == GameJob.Best || job == GameJob.None) continue;
 
                     var epi = new EncounterPropertyInfo
                     {
@@ -278,6 +278,7 @@ namespace FFLogsLookup.FFlogs
                 foreach (var epi in encounterPropertyInfos)
                 {
                     var encounterRankings = (EncounterRankings)epi.PropertyInfo.GetValue(respData.Data.CharacterData.Character);
+                    if (encounterRankings == null) continue;
 
                     var key = new EncounterDataKey
                     {

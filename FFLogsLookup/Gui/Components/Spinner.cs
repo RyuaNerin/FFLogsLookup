@@ -2,7 +2,7 @@
 using System.Numerics;
 using ImGuiNET;
 
-namespace FFLogsLookup.Gui
+namespace FFLogsLookup.Gui.Components
 {
     internal class Spinner
     {

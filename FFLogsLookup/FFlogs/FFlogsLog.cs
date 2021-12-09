@@ -22,6 +22,8 @@ namespace FFLogsLookup.FFlogs
     {
         public GameEncounter EncounterId { get; set; }
         public GameJob       JobId       { get; set; }
+
+        public override string ToString() => $"{this.EncounterId} : {this.JobId}";
     }
 
     public struct EncounterData

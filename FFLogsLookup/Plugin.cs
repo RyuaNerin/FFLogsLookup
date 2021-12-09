@@ -1,11 +1,9 @@
 ﻿using System;
-using System.Runtime.InteropServices;
 using Dalamud.Interface.Windowing;
 using Dalamud.Logging;
 using Dalamud.Plugin;
 using FFLogsLookup.FFlogs;
 using FFLogsLookup.Gui;
-using ImGuiNET;
 using XivCommon;
 
 namespace FFLogsLookup
@@ -24,6 +22,7 @@ namespace FFLogsLookup
 
         internal ConfigGui WindowConfig { get; }
         internal DetailGui WindowDetail { get; }
+        internal PartyGui  WindowParty  { get; }
 
         internal XivCommonBase XivCommon { get; }
 
@@ -54,9 +53,11 @@ namespace FFLogsLookup
 
                 this.WindowConfig = new ConfigGui(this);
                 this.WindowDetail = new DetailGui(this);
+                this.WindowParty  = new PartyGui(this);
 
                 this.windowSystem.AddWindow(this.WindowConfig);
                 this.windowSystem.AddWindow(this.WindowDetail);
+                this.windowSystem.AddWindow(this.WindowParty);
                 DalamudInstance.PluginInterface.UiBuilder.OpenConfigUi += this.UiBuilder_OpenConfigUi;
                 DalamudInstance.PluginInterface.UiBuilder.Draw += this.UiBuilder_Draw;
 
@@ -98,6 +99,7 @@ namespace FFLogsLookup
 
                 this.WindowConfig?.Dispose();
                 this.WindowDetail?.Dispose();
+                this.WindowParty?.Dispose();
 
                 this.FFlogsClient?.Dispose();
 

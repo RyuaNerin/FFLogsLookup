@@ -28,7 +28,8 @@ namespace FFLogsLookup.Game
 
     public enum GameJob : byte
     {
-        Best = 0,
+        None = 0,
+        Best = 1,
 
         Paladin    = 11,
         Warrior    = 12,
@@ -112,7 +113,7 @@ namespace FFLogsLookup.Game
             };
         }
 
-        public static string S(this GameJob gameJob)
+        public static string GetDescription(this GameJob gameJob)
         {
             return gameJob switch
             {
@@ -136,6 +137,32 @@ namespace FFLogsLookup.Game
                 GameJob.WhiteMage   => "백마도사",
 
                 _ => "",
+            };
+        }
+
+        public static string GetGlyph(this GameJob gameJob)
+        {
+            return gameJob switch
+            {
+                GameJob.Astrologian => "\uf033",
+                GameJob.Bard        => "\uf023",
+                GameJob.BlackMage   => "\uf025",
+                GameJob.Dancer      => "\uf038",
+                GameJob.DarkKnight  => "\uf032",
+                GameJob.Dragoon     => "\uf022",
+                GameJob.Gunbreaker  => "\uf037",
+                GameJob.Machinist   => "\uf031",
+                GameJob.Monk        => "\uf020",
+                GameJob.Ninja       => "\uf030",
+                GameJob.Paladin     => "\uf019",
+                GameJob.RedMage     => "\uf035",
+                GameJob.Samurai     => "\uf034",
+                GameJob.Scholar     => "\uf028",
+                GameJob.Summoner    => "\uf027",
+                GameJob.Warrior     => "\uf021",
+                GameJob.WhiteMage   => "\uf024",
+
+                _ => null,
             };
         }
 

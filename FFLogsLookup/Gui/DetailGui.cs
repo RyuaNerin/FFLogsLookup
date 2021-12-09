@@ -4,9 +4,12 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Interface;
 using Dalamud.Logging;
 using FFLogsLookup.FFlogs;
 using FFLogsLookup.Game;
+using FFLogsLookup.Gui.Components;
+using FFLogsLookup.Utils;
 using ImGuiNET;
 
 namespace FFLogsLookup.Gui
@@ -28,7 +31,7 @@ namespace FFLogsLookup.Gui
         public DetailGui(Plugin plugin)
             : base(plugin, "FFLogsLookup: 캐릭터 정보 조회")
         {
-            this.drawingData = new(this);
+            this.drawingData = new();
             this.drawingData.Update(null);
 
             this.Size = Vector2.Zero;
@@ -81,7 +84,7 @@ namespace FFLogsLookup.Gui
                 ImGui.GetWindowWidth() - this.button1Width[0] - this.button1Width[1] - this.button1Width[2]);
 
             this.Size = new Vector2(
-                Math.Max(this.drawingData.GetWidth(), charNameWidth + this.button1Width[0] + this.button1Width[1] + this.button1Width[2]),
+                Math.Max(this.drawingData.Width, charNameWidth + this.button1Width[0] + this.button1Width[1] + this.button1Width[2]),
                 0);
 
             ImGui.Columns(4, "##input-columns", false);
@@ -298,110 +301,35 @@ namespace FFLogsLookup.Gui
 
         private class DrawingData
         {
-            private const float JobColumnWidth = 20;
+            private static readonly CellData StrRank = new("RANK");
+            private static readonly CellData StrAvg = new("AVG %");
+            private static readonly CellData StrJob = new("JOB");
+            private static readonly CellData StrRdps = new("rDPS");
+            private static readonly CellData StrBestPer = new("BEST %");
+            private static readonly CellData StrMedPer = new("MED %");
+            private static readonly CellData StrKills = new("Kills");
+            private static readonly CellData StrNone = new("");
+            private static readonly CellData StrAllstarEng = new("Allstar");
 
-            private struct Data
+            private static readonly CellData StrRaid = new("에덴 영식");
+            private static readonly CellData StrUlti = new("절 토벌전");
+            private static readonly CellData StrAllstar = new("올스타");
+
+            private static readonly (CellData str, GameEncounter enc)[] raidEncounters =
             {
-                public Data(GameJob gameJob)
-                {
-                    this.Job = gameJob;
-                    this.Text = gameJob.S();
-                    this.Color = gameJob.C();
-                    this.ToolTip = gameJob.S();
-                    this.Width = 0;
-                }
-                public Data(string text, Vector4 color, string toolTip = null)
-                {
-                    this.Job     = null;
-                    this.Text    = text;
-                    this.Color   = color;
-                    this.ToolTip = toolTip ?? string.Empty;
-                    this.Width   = 0;
-                }
-
-                public GameJob? Job     { get; set; }
-                public string   Text    { get; set; }
-                public Vector4  Color   { get; set; }
-                public string   ToolTip { get; set; }
-                public float    Width   { get; set; }
-
-                public Data UpdateWidth(float width)
-                {
-                    this.Width = width;
-                    return this;
-                }
-            }
-
-            private class JobData
-            {
-                public List<Data[]> TextData { get; } = new();
-                public float[] ColumnWidth { get;} = new float[6];
-
-                public void UpdateWidth(DrawingData parent, float spacingX)
-                {
-                    for (int i = 0; i < this.TextData.Count; i++)
-                    {
-                        var arr = this.TextData[i];
-                        if (arr == null) continue;
-
-                        for (int k = 0; k < 6; k++)
-                        {
-                            if (!string.IsNullOrWhiteSpace(arr[k].Text))
-                            {
-                                if (arr[k].Job.HasValue)
-                                {
-                                    /*
-                                    ImGui.PushFont(parent.detailGui.plugin.PluginFont.JobIcon);
-                                    arr[k] = arr[k].UpdateWidth(ImGui.CalcTextSize(PluginFont.GetJobGlyph(arr[k].Job.Value)).X);
-                                    ImGui.PopFont();
-                                    */
-                                    arr[k] = arr[k].UpdateWidth(20);
-                                }
-                                else
-                                {
-                                    arr[k] = arr[k].UpdateWidth(ImGui.CalcTextSize(arr[k].Text).X);
-                                }
-                            }
-                        }
-
-                        this.TextData[i] = arr;
-                    }
-
-                    for (int i = 0; i < 6; i++)
-                    {
-                        this.ColumnWidth[i] = this.TextData.Where(e => e != null).Max(e => e[i].Width) + spacingX * 2;
-                    }
-                }
-            }
-
-            private readonly DetailGui detailGui;
-
-            private readonly Dictionary<GameJob, JobData> drawDataRaid = new();
-            private readonly Dictionary<GameJob, JobData> drawDataUlti = new();
-
-            private readonly Dictionary<GameJob, Vector4> colorRaid = new();
-            private readonly Dictionary<GameJob, Vector4> colorUlti = new();
-
-            private GameJob jobCurrentRaid = GameJob.Best;
-            private GameJob jobCurrentUlti = GameJob.Best;
-
-            private string updatedAtString = string.Empty;
-            private float updatedAtWidth = 0;
-
-            private static readonly (string, GameEncounter)[] edenEncounters =
-            {
-                ("1층"     , GameEncounter.E9s       ),
-                ("2층"     , GameEncounter.E10s      ),
-                ("3층"     , GameEncounter.E11s      ),
-                ("4층 전반", GameEncounter.E12sDoor  ),
-                ("4층 후반", GameEncounter.E12sOracle),
+                (new("1층"     ), GameEncounter.E9s       ),
+                (new("2층"     ), GameEncounter.E10s      ),
+                (new("3층"     ), GameEncounter.E11s      ),
+                (new("4층 전반"), GameEncounter.E12sDoor  ),
+                (new("4층 후반"), GameEncounter.E12sOracle),
             };
-            private static readonly (string, GameEncounter)[] ultiEncounters =
+            private static readonly (CellData str, GameEncounter enc)[] ultiEncounters =
             {
-                ("알렉산더", GameEncounter.Tea ),
-                ("알테마"  , GameEncounter.Ucob),
-                ("바하무트", GameEncounter.Uwu ),
+                (new("알렉산더"), GameEncounter.Tea ),
+                (new("알테마"  ), GameEncounter.Ucob),
+                (new("바하무트"), GameEncounter.Uwu ),
             };
+
             private static readonly GameJob[][] raidJobColumn = new GameJob[][]
             {
                 new GameJob[]
@@ -418,110 +346,173 @@ namespace FFLogsLookup.Gui
                 },
             };
 
-            public DrawingData(DetailGui detailGui)
+            private class JobData
             {
-                this.detailGui = detailGui;
+                public class AllstarData
+                {
+                    public CellData Job     { get; } = new();
+                    public CellData BestAvg { get; } = new();
+                    public CellData Rank    { get; } = new();
+                    public CellData AllStar { get; } = new();
+                    public CellData Kills   { get; } = new();
+                }
+                public class EncounterData
+                {
+                    public CellData Job     { get; } = new();
+                    public CellData Rdps    { get; } = new();
+                    public CellData BestPer { get; } = new();
+                    public CellData MedPer  { get; } = new();
+                    public CellData Kills   { get; } = new();
+                }
+                public AllstarData AllStar { get; } = new();
+                public Dictionary<GameEncounter, EncounterData> Encounter { get; } = new();
+            }
 
+            private readonly Dictionary<GameJob, JobData> jobData = new();
+
+            private readonly Dictionary<GameJob, Vector4> raidPlayed = new();
+            private readonly Dictionary<GameJob, Vector4> ultiPlayed = new();
+
+            private GameJob jobCurrentRaid = GameJob.Best;
+            private GameJob jobCurrentUlti = GameJob.Best;
+
+            private readonly CellData UpdatedAt = new();
+
+            private float? width;
+            private float width0FirstColumns;
+            private float width1Job;
+            private float width2RdpsOrRank;
+            private float width3AvgOrBest;
+            private float width4AllstarOrMed;
+            private float width5Kills;
+
+            public float Width
+            {
+                get
+                {
+                    this.CalcWidth();
+                    return this.width.Value;
+                }
+            }
+
+            public DrawingData()
+            {
                 foreach (var job in Enum.GetValues<GameJob>())
                 {
-                    this.drawDataRaid[job] = new JobData();
-                    this.drawDataUlti[job] = new JobData();
+                    if (job == GameJob.None) continue;
+
+                    var item = new JobData();
+                    this.jobData[job] = item;
+
+                    foreach (var (_, enc) in raidEncounters) item.Encounter[enc] = new JobData.EncounterData();
+                    foreach (var (_, enc) in ultiEncounters) item.Encounter[enc] = new JobData.EncounterData();
                 }
             }
 
-            public float GetWidth()
+            public void CalcWidth()
             {
-                var dataRaid = this.drawDataRaid[this.jobCurrentRaid];
-                var dataUlti = this.drawDataUlti[this.jobCurrentUlti];
+                if (this.width.HasValue) return;
 
-                return Math.Max(
-                    Math.Max(
-                        dataRaid.ColumnWidth[0] +
-                            dataRaid.ColumnWidth[1] +
-                            dataRaid.ColumnWidth[2] +
-                            dataRaid.ColumnWidth[3] +
-                            dataRaid.ColumnWidth[4] +
-                            dataRaid.ColumnWidth[5],
-                        dataUlti.ColumnWidth[0] +
-                            dataUlti.ColumnWidth[1] +
-                            dataUlti.ColumnWidth[2] +
-                            dataUlti.ColumnWidth[3] +
-                            dataUlti.ColumnWidth[4] +
-                            dataUlti.ColumnWidth[5]
-                    ),
-                    JobColumnWidth * 12
+                var style = ImGui.GetStyle();
+                var padding = style.ItemSpacing.X * 2;
+
+                this.width0FirstColumns = padding + Mathx.Max(
+                    StrRaid.ValueWidth,
+                    StrUlti.ValueWidth,
+                    StrAllstar.ValueWidth,
+                    raidEncounters.Max(e => e.str.ValueWidth),
+                    ultiEncounters.Max(e => e.str.ValueWidth)
                 );
+
+                this.width1Job = padding + Mathx.Max(
+                    StrJob.ValueWidth,
+                    jobData.Max(e => e.Value.AllStar.Job.ValueWidth),
+                    jobData.Max(e => e.Value.Encounter.Max(ee => ee.Value.Job.ValueWidth))
+                );
+
+                this.width2RdpsOrRank = padding + Mathx.Max(
+                    StrRank.ValueWidth,
+                    StrRdps.ValueWidth,
+                    jobData.Max(e => e.Value.AllStar.Rank.ValueWidth),
+                    jobData.Max(e => e.Value.Encounter.Max(ee => ee.Value.Rdps.ValueWidth))
+                );
+
+                this.width3AvgOrBest = padding + Mathx.Max(
+                    StrAvg.ValueWidth,
+                    StrBestPer.ValueWidth,
+                    jobData.Max(e => e.Value.AllStar.BestAvg.ValueWidth),
+                    jobData.Max(e => e.Value.Encounter.Max(ee => ee.Value.BestPer.ValueWidth))
+                );
+
+                this.width4AllstarOrMed = padding + Mathx.Max(
+                    StrAllstarEng.ValueWidth,
+                    StrMedPer.ValueWidth,
+                    jobData.Max(e => e.Value.AllStar.AllStar.ValueWidth),
+                    jobData.Max(e => e.Value.Encounter.Max(ee => ee.Value.MedPer.ValueWidth))
+                );
+
+                this.width5Kills = padding + Mathx.Max(
+                    StrKills.ValueWidth,
+                    jobData.Max(e => e.Value.AllStar.Kills.ValueWidth),
+                    jobData.Max(e => e.Value.Encounter.Max(ee => ee.Value.Kills.ValueWidth))
+                );
+
+                this.width =
+                    this.width0FirstColumns +
+                    this.width1Job +
+                    this.width2RdpsOrRank +
+                    this.width3AvgOrBest +
+                    this.width4AllstarOrMed +
+                    this.width5Kills;
             }
 
+            private readonly object Lock = new();
             public void Draw()
             {
+                lock (this.Lock)
+                {
+                    this.DrawInternal();
+                }
+            }
+            public void DrawInternal()
+            {
+                this.CalcWidth();
+
                 var style = ImGui.GetStyle();
+                var padding = style.ItemSpacing.X * 2;
 
-                var dataRaid = this.drawDataRaid[this.jobCurrentRaid];
-                var dataUlti = this.drawDataUlti[this.jobCurrentUlti];
-
-                var width = new float[]
-                {
-                    Math.Max(dataRaid.ColumnWidth[0], dataUlti.ColumnWidth[0]),
-                    Math.Max(dataRaid.ColumnWidth[1], dataUlti.ColumnWidth[1]),
-                    Math.Max(dataRaid.ColumnWidth[2], dataUlti.ColumnWidth[2]),
-                    Math.Max(dataRaid.ColumnWidth[3], dataUlti.ColumnWidth[3]),
-                    Math.Max(dataRaid.ColumnWidth[4], dataUlti.ColumnWidth[4]),
-                    Math.Max(dataRaid.ColumnWidth[5], dataUlti.ColumnWidth[5]),
-                };
-
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                DrawJobs(this.colorRaid, style, ref this.jobCurrentRaid);
+                this.jobCurrentRaid = DrawJobs("##logs-raid-job", this.raidPlayed, this.jobCurrentRaid);
                 ImGui.Spacing();
 
                 ImGui.Separator();
-                ImGui.Columns(6, "##logs", false);
 
-                for (var k = 0; k < 6; k++)
-                {
-                    ImGui.SetColumnWidth(k, width[k]);
-                    if (k != 0) ImGui.NextColumn();
-                    DrawColumn(dataRaid, width[k], k, style.ItemSpacing.X);
-                }
-
+                DrawEncounter(this.jobData[this.jobCurrentRaid], raidEncounters, true);
                 ImGui.Columns();
 
                 ////////////////////////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 ImGui.Spacing();
 
-                DrawJobs(this.colorUlti, style, ref this.jobCurrentUlti);
+                this.jobCurrentUlti = DrawJobs("##logs-ulti-job", this.ultiPlayed, this.jobCurrentUlti);
                 ImGui.Spacing();
 
                 ImGui.Separator();
+
                 ImGui.Columns(6, "##logs", false);
-
-                for (var k = 0; k < 6; k++)
-                {
-                    ImGui.SetColumnWidth(k, width[k]);
-                    if (k != 0) ImGui.NextColumn();
-                    DrawColumn(dataUlti, width[k], k, style.ItemSpacing.X);
-                }
-
+                DrawEncounter(this.jobData[this.jobCurrentUlti], ultiEncounters, false);
                 ImGui.Columns();
 
                 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 ImGui.Separator();
 
-                ImGui.SetCursorPosX(ImGui.GetWindowWidth() - this.updatedAtWidth - style.ItemSpacing.X);
-                ImGui.TextUnformatted(this.updatedAtString);
+                this.UpdatedAt.Draw(ImGui.GetWindowWidth() - padding, padding, CellData.Align.Right);
 
                 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                void DrawJobs(Dictionary<GameJob, Vector4> colorData, ImGuiStylePtr style, ref GameJob gameJob)
+                GameJob DrawJobs(string id, Dictionary<GameJob, Vector4> played, GameJob gameJob)
                 {
-                    var jobCellWidth = Math.Max((ImGui.GetWindowWidth() - style.WindowPadding.X * 2) / 12, JobColumnWidth);
+                    var jobCellWidth = (ImGui.GetWindowWidth() - style.WindowPadding.X * 2) / 12;
 
                     ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
                     ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Vector4.Zero);
@@ -530,12 +521,12 @@ namespace FFLogsLookup.Gui
 
                     ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, Vector2.Zero);
                     ImGui.PushStyleVar(ImGuiStyleVar.ItemInnerSpacing, Vector2.Zero);
-                    ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
+                    ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(0, 2));
                     ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 0);
                     ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
-                    {
 
-                        ImGui.Columns(10, "##logs-raid-job", false);
+                    {
+                        ImGui.Columns(10, id, false);
 
                         for (int i = 0; i < raidJobColumn[0].Length; i++)
                         {
@@ -546,20 +537,24 @@ namespace FFLogsLookup.Gui
                             else
                             {
                                 ImGui.SetColumnWidth(i, jobCellWidth);
-                                ImGui.NextColumn();
                             }
+                        }
 
+                        for (int i = 0; i < raidJobColumn[0].Length; i++)
+                        {
                             if (i == 0)
                             {
                                 ImGui.SetNextItemWidth(jobCellWidth * 3 - style.ColumnsMinSpacing * 2);
-                                if (ImGui.Button("BEST", new(jobCellWidth * 3, 0)))
+                                if (ImGui.Button($"BEST{id}-best", new(jobCellWidth * 3, 0)))
                                 {
+                                    PluginLog.Debug("BEST");
                                     gameJob = GameJob.Best;
                                 }
                             }
                             else
                             {
-                                Append(raidJobColumn[0][i], jobCellWidth, style, ref gameJob);
+                                ImGui.NextColumn();
+                                gameJob = Append(raidJobColumn[0][i], jobCellWidth, gameJob);
                             }
                         }
 
@@ -576,9 +571,12 @@ namespace FFLogsLookup.Gui
                         for (int i = 0; i < raidJobColumn[1].Length; i++)
                         {
                             ImGui.SetColumnWidth(i, jobCellWidth);
+                        }
+                        for (int i = 0; i < raidJobColumn[1].Length; i++)
+                        {
                             if (i != 0) ImGui.NextColumn();
 
-                            Append(raidJobColumn[1][i], jobCellWidth, style, ref gameJob);
+                            gameJob = Append(raidJobColumn[1][i], jobCellWidth, gameJob);
                         }
 
                         ImGui.Columns();
@@ -594,92 +592,183 @@ namespace FFLogsLookup.Gui
                     ImGui.PopStyleColor();
                     ImGui.PopStyleColor();
 
-                    void Append(GameJob job, float width, ImGuiStylePtr style, ref GameJob gameJob)
+                    return gameJob;
+
+                    GameJob Append(GameJob job, float width, GameJob gameJob)
                     {
-                        if (job == GameJob.Best) return;
+                        if (job == GameJob.Best || job == GameJob.None) return gameJob;
 
                         ImGui.SetNextItemWidth(width - style.ColumnsMinSpacing * 2);
 
-                        ImGui.PushFont(this.detailGui.plugin.PluginFont.JobIcon);
-                        if (colorData.TryGetValue(job, out var color))
+                        ImGui.PushFont(PluginFont.JobIcon);
+                        if (played.TryGetValue(job, out var color))
                         {
                             ImGui.PushStyleColor(ImGuiCol.Text, color);
-                            if (ImGui.Button(PluginFont.GetJobGlyph(job), new(jobCellWidth, 0)))
+                            if (ImGui.Button($"{GameData.GetGlyph(job)}{id}-best", new(jobCellWidth, 0)))
                             {
+                                PluginLog.Debug(job.GetDescription());
                                 gameJob = job;
                             }
                             ImGui.PopStyleColor();
                         }
                         else
                         {
-                            var chr = PluginFont.GetJobGlyph(job);
-
-                            //ImGui.Button(PluginFont.GetJobGlyph(job));c
+                            //ImGui.Button(PluginFont.GetJobGlyph(job));
                             ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.2f);
-                            ImGui.TextUnformatted(chr);
+                            ImGui.TextUnformatted(job.GetGlyph());
                             ImGui.PopStyleVar();
                         }
                         ImGui.PopFont();
+
+                        return gameJob;
                     }
                 }
 
-                void DrawColumn(JobData data, float width, int k, float spacing)
+                void DrawEncounter(JobData jobData, (CellData str, GameEncounter enc)[] encounters, bool drawAllstar)
                 {
-                    for (int i = 0; i < data.TextData.Count; i++)
+                    ImGui.Columns(6, "##dps", true);
+
+                    ImGui.SetColumnWidth(0, this.width0FirstColumns);
+                    ImGui.SetColumnWidth(1, this.width1Job);
+                    ImGui.SetColumnWidth(2, this.width2RdpsOrRank);
+                    ImGui.SetColumnWidth(3, this.width3AvgOrBest);
+                    ImGui.SetColumnWidth(4, this.width4AllstarOrMed);
+                    ImGui.SetColumnWidth(5, this.width5Kills);
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 0
+
+                    if (drawAllstar)
                     {
-                        if (data.TextData[i] == null)
-                        {
-                            if (k == 5) ImGui.Separator();
-                            else ImGui.Spacing();
-
-                            continue;
-                        }
-
-                        var d = data.TextData[i][k];
-
-                        if (d.Job.HasValue)
-                        {
-                            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (width - spacing * 2 - d.Width) / 2);
-                            ImGui.PushStyleColor(ImGuiCol.Text, d.Color);
-                            ImGui.PushFont(this.detailGui.plugin.PluginFont.JobIcon);
-                            ImGui.TextUnformatted(PluginFont.GetJobGlyph(d.Job.Value));
-                            ImGui.PopFont();
-                            ImGui.PopStyleColor();
-
-                            if (ImGui.IsItemHovered() && !string.IsNullOrWhiteSpace(d.ToolTip))
-                            {
-                                ImGui.BeginTooltip();
-                                ImGui.SetTooltip(d.ToolTip);
-                                ImGui.EndTooltip();
-                            }
-                        }
-                        else
-                        {
-                            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (width - spacing * 2 - d.Width) / 2);
-                            ImGui.PushStyleColor(ImGuiCol.Text, d.Color);
-                            ImGui.TextUnformatted(d.Text);
-                            ImGui.PopStyleColor();
-
-                            if (ImGui.IsItemHovered() && !string.IsNullOrWhiteSpace(d.ToolTip))
-                            {
-                                ImGui.BeginTooltip();
-                                ImGui.SetTooltip(d.ToolTip);
-                                ImGui.EndTooltip();
-                            }
-                        }
+                        StrAllstar.Draw(this.width0FirstColumns, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                        StrNone.Draw(this.width0FirstColumns, padding, CellData.Align.Center);
+                        ImGui.Spacing();
                     }
+
+                    StrRaid.Draw(this.width0FirstColumns, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (str, _) in encounters)
+                    {
+                        str.Draw(this.width0FirstColumns, padding, CellData.Align.Center);
+                    }
+                    ImGui.Spacing();
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 1
+
+                    ImGui.NextColumn();
+                    if (drawAllstar)
+                    {
+                        StrJob.Draw(this.width1Job, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                        jobData.AllStar.Job.Draw(this.width1Job, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                    }
+
+                    StrJob.Draw(this.width1Job, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (_, enc) in encounters)
+                    {
+                        jobData.Encounter[enc].Job.Draw(this.width1Job, padding, CellData.Align.Center);
+                    }
+                    ImGui.Spacing();
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 2
+
+                    ImGui.NextColumn();
+                    if (drawAllstar)
+                    {
+                        StrRank.Draw(this.width2RdpsOrRank, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                        jobData.AllStar.Rank.Draw(this.width2RdpsOrRank, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                    }
+
+                    StrRdps.Draw(this.width2RdpsOrRank, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (_, enc) in encounters)
+                    {
+                        jobData.Encounter[enc].Rdps.Draw(this.width2RdpsOrRank, padding, CellData.Align.Right);
+                    }
+                    ImGui.Spacing();
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 3
+
+                    ImGui.NextColumn();
+                    if (drawAllstar)
+                    {
+                        StrAvg.Draw(this.width3AvgOrBest, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                        jobData.AllStar.BestAvg.Draw(this.width3AvgOrBest, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                    }
+
+                    StrBestPer.Draw(this.width3AvgOrBest, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (_, enc) in encounters)
+                    {
+                        jobData.Encounter[enc].BestPer.Draw(this.width3AvgOrBest, padding, CellData.Align.Right);
+                    }
+                    ImGui.Spacing();
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 4
+
+                    ImGui.NextColumn();
+                    if (drawAllstar)
+                    {
+                        StrAllstar.Draw(this.width4AllstarOrMed, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                        jobData.AllStar.AllStar.Draw(this.width4AllstarOrMed, padding, CellData.Align.Center);
+                        ImGui.Spacing();
+                    }
+
+                    StrMedPer.Draw(this.width4AllstarOrMed, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (_, enc) in encounters)
+                    {
+                        jobData.Encounter[enc].MedPer.Draw(this.width4AllstarOrMed, padding, CellData.Align.Right);
+                    }
+                    ImGui.Spacing();
+
+                    //////////////////////////////////////////////////////////////////////////////////////////////////// 5
+
+                    ImGui.NextColumn();
+                    if (drawAllstar)
+                    {
+                        StrKills.Draw(this.width5Kills, padding, CellData.Align.Center);
+                        ImGui.Separator();
+                        jobData.AllStar.Kills.Draw(this.width5Kills, padding, CellData.Align.Center);
+                        ImGui.Separator();
+                    }
+
+                    StrKills.Draw(this.width5Kills, padding, CellData.Align.Center);
+                    ImGui.Separator();
+                    foreach (var (_, enc) in encounters)
+                    {
+                        jobData.Encounter[enc].Kills.Draw(this.width5Kills, padding, CellData.Align.Right);
+                    }
+                    ImGui.Separator();
+
+                    ImGui.Columns();
                 }
             }
 
-            public unsafe void Update(FFlogsLog log)
+            public void Update(FFlogsLog log)
+            {
+                lock (this.Lock)
+                {
+                    this.UpdateInternal(log);
+                }
+            }
+
+            private void UpdateInternal(FFlogsLog log)
             {
                 log ??= FFlogsLog.Empty;
 
                 this.jobCurrentRaid = GameJob.Best;
                 this.jobCurrentUlti = GameJob.Best;
 
-                this.updatedAtString = log == FFlogsLog.Empty ? "-" : log.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss \"기준\"");
-                this.updatedAtWidth = ImGui.CalcTextSize(this.updatedAtString).X;
+                this.width = null;
+                this.UpdatedAt.Value = log == FFlogsLog.Empty ? "-" : log.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss \"기준\"");
 
                 //var containsEcho = this.plugin.PluginConfig.ApiContainsEcho;
 
@@ -690,16 +779,9 @@ namespace FFLogsLookup.Gui
 
                 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                var c = *ImGui.GetStyleColorVec4(ImGuiCol.Text);
-
-                var style = ImGui.GetStyle();
-                var spacingX = style.ColumnsMinSpacing;
-
-                ////////////////////////////////////////////////////////////////////////////////////////////////////
-
                 // 전체 클리어 횟수 미리 계산하기
                 var raidKills = new Dictionary<GameEncounter, int>();
-                foreach (var (_, enc) in edenEncounters)
+                foreach (var (_, enc) in raidEncounters)
                 {
                     raidKills[enc] =
                         encounterData
@@ -708,38 +790,39 @@ namespace FFLogsLookup.Gui
                 }
                 raidKills[0] = raidKills.Sum(e => e.Value);
 
-                this.colorRaid.Clear();
-                this.colorUlti.Clear();
+                this.raidPlayed.Clear();
+                this.ultiPlayed.Clear();
 
                 foreach (var currentJob in Enum.GetValues<GameJob>())
                 {
-                    UpdateRaid(encounterData, allstarData, raidKills, currentJob);
-                    this.drawDataRaid[currentJob].UpdateWidth(this, spacingX);
+                    if (currentJob == GameJob.None) continue;
 
-                    UpdateUlti(encounterData, currentJob);
-                    this.drawDataUlti[currentJob].UpdateWidth(this, spacingX);
+                    UpdateAllstar(currentJob);
+
+                    foreach (var (_, enc) in raidEncounters)
+                    {
+                        UpdateEncounter(currentJob, enc);
+                    }
+                    foreach (var (_, enc) in ultiEncounters)
+                    {
+                        UpdateEncounter(currentJob, enc);
+                    }
+
+                    // 절 토벌전 평균
+                    var jobData = this.jobData[currentJob];
+
+                    if (encounterData.Any(e => !e.Key.EncounterId.IsRaids() && e.Key.JobId == currentJob))
+                    {
+                        var avg = encounterData.Where(e => !e.Key.EncounterId.IsRaids() && e.Key.JobId == currentJob).Average(e => e.Value.MaxPer);
+                        this.ultiPlayed[currentJob] = FFlogsColor.GetColor(avg);
+                    }
+
                 }
+                ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                void UpdateRaid(
-                    Dictionary<EncounterDataKey, EncounterData> encounterData,
-                    Dictionary<GameJob, ZoneData> allstarData,
-                    Dictionary<GameEncounter, int> raidKills,
-                    GameJob currentJob)
+                void UpdateAllstar(GameJob currentJob)
                 {
-                    var drawData = this.drawDataRaid[currentJob];
-                    drawData.TextData.Clear();
-
-                    drawData.TextData.Add(new[] {
-                        new Data("BEST"     , c),
-                        new Data("JOB"      , c),
-                        new Data("RANK"     , c, "직업 순위"),
-                        new Data("AVG %"    , c, "최고점수 평균 %%"),
-                        new Data("AllStar"  , c, "각 층당 1위 dps를 기준으로 120점 만점 점수로 환산한 점수"),
-                        new Data("KILLs"    , c),
-                    });
-                    drawData.TextData.Add(null);
-
-                    ////////////////////////////////////////////////////////////////////////////////////////////////////
+                    var jobData = this.jobData[currentJob];
 
                     GameJob? targetJob;
                     if (currentJob != GameJob.Best)
@@ -757,181 +840,105 @@ namespace FFLogsLookup.Gui
 
                     if (targetJob.HasValue && allstarData.TryGetValue(targetJob.Value, out var item))
                     {
-                        var rankPercent = (float)(item.Total - item.Rank) / item.Total * 100;
-                        var color = FFlogsColor.GetColor(rankPercent);
-                        rankPercent = (float)(Math.Floor(rankPercent * 10) / 10);
-
-                        this.colorRaid[targetJob.Value] = color;
-
-                        var kills = encounterData
+                        var jobKills = encounterData
                             .Where(e => e.Key.EncounterId.IsRaids() && e.Key.JobId == targetJob)
                             .Sum(e => e.Value.Kills);
 
                         var bestAvg = encounterData
-                            .Where(e => e.Key.EncounterId.IsRaids())
+                            .Where(e => e.Key.EncounterId.IsRaids() && e.Key.JobId == targetJob)
                             .GroupBy(e => e.Key.EncounterId)
                             .Average(e => e.Max(ee => ee.Value.MaxPer));
 
-                        drawData.TextData.Add(new[]
-                        {
-                            new Data(string.Empty, c, string.Empty),
-                            new Data(targetJob.Value),
-                            new Data(item.Rank.ToString("#,##0"), color, $"{item.Rank:#,##0} / {item.Total:#,##0}\n상위 {rankPercent:##0.0} %%"),
-                            new Data(bestAvg.ToString("#0.0"), color),
-                            new Data(item.Point.ToString("##0.00"), color),
-                            new Data(kills.ToString("#,##0"), c, $"{targetJob?.S()} : {kills}\n전체 : {raidKills[0]}"),
-                        });
+                        jobData.AllStar.Job.SetByJob(targetJob.Value);
+                        jobData.AllStar.BestAvg.Value = bestAvg.ToString("#0.0");
+                        jobData.AllStar.Rank   .Value = item.Rank.ToString("#,##0");
+                        jobData.AllStar.AllStar.Value = item.Point.ToString("##0.00");
+                        jobData.AllStar.Kills  .Value = jobKills.ToString("#,##0");
+
+                        // ----------------------------------------------------------------------------------------------------
+
+                        var rankPercent = (float)(item.Total - item.Rank + 1) / item.Total * 100;
+                        jobData.AllStar.Rank.Color = FFlogsColor.GetColor(rankPercent);
+
+                        var avgColor = FFlogsColor.GetColor(bestAvg);
+                        this.raidPlayed[targetJob.Value] = avgColor;
+                        jobData.AllStar.BestAvg.Color = avgColor;
+                        jobData.AllStar.AllStar.Color = avgColor;
+
+                        // ----------------------------------------------------------------------------------------------------
+
+                        jobData.AllStar.Rank   .ToolTip = $"{item.Rank:#,##0} / {item.Total:#,##0}\n상위 {(Math.Floor(rankPercent * 10) / 10):##0.0} %%";
+                        jobData.AllStar.Kills  .ToolTip = $"{targetJob?.GetDescription()} : {jobKills}\n전체 : {raidKills[0]}";
                     }
                     else
                     {
-                        drawData.TextData.Add(new[]
-                        {
-                            new Data(string.Empty, c),
-                            new Data(string.Empty, c),
-                            new Data(string.Empty, c),
-                            new Data(string.Empty, c),
-                            new Data(string.Empty, c),
-                            new Data(string.Empty, c),
-                        });
+                        jobData.AllStar.Job    .Value = null;
+                        jobData.AllStar.BestAvg.Value = null;
+                        jobData.AllStar.Rank   .Value = null;
+                        jobData.AllStar.AllStar.Value = null;
+                        jobData.AllStar.Kills  .Value = null;
                     }
-
-                    drawData.TextData.Add(null);
-
-                    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                    drawData.TextData.Add(new[] {
-                        new Data("에덴 영식", c),
-                        new Data("JOB"      , c),
-                        new Data("rDPS"     , c),
-                        new Data("BEST %"   , c),
-                        new Data("MED %"    , c),
-                        new Data("KILLs"    , c),
-                    });
-                    drawData.TextData.Add(null);
-
-                    // Encounters
-                    foreach (var (name, enc) in edenEncounters)
-                    {
-                        if (currentJob != GameJob.Best)
-                        {
-                            targetJob = currentJob;
-                        }
-                        else
-                        {
-                            targetJob =
-                                encounterData
-                                .Where(e => e.Key.EncounterId == enc)
-                                .OrderByDescending(e => e.Value.MaxPer)
-                                .Select(e => e.Key.JobId)
-                                .FirstOrDefault();
-                        }
-
-                        var key = new EncounterDataKey
-                        {
-                            JobId = targetJob.Value,
-                            EncounterId = enc,
-                        };
-
-                        if (targetJob.HasValue && encounterData.TryGetValue(key, out var encData))
-                        {
-                            var color = FFlogsColor.GetColor(encData.MaxPer);
-
-                            drawData.TextData.Add(new[]
-                            {
-                                new Data(name, c),
-                                new Data(targetJob.Value),
-                                new Data(encData.MaxRdps.ToString("#,##0.0"), color),
-                                new Data((Math.Floor(encData.MaxPer * 10) / 10).ToString("##0.0"), color),
-                                new Data((Math.Floor(encData.MedPer * 10) / 10).ToString("##0.0"), FFlogsColor.GetColor(encData.MedPer)),
-                                new Data(encData.Kills.ToString("#,##0"), c, $"{targetJob?.S()} : {encData.Kills}\n전체 : {raidKills[enc]}"),
-                            });
-                        }
-                        else
-                        {
-                            drawData.TextData.Add(new[]
-                            {
-                                new Data(name, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                            });
-                        }
-                    }
-                    drawData.TextData.Add(null);
                 }
 
-                void UpdateUlti(
-                    Dictionary<EncounterDataKey, EncounterData> encounterData,
-                    GameJob currentJob)
+                void UpdateEncounter(GameJob job, GameEncounter enc)
                 {
-                    var drawData = this.drawDataUlti[currentJob];
-                    drawData.TextData.Clear();
+                    var jobData = this.jobData[job];
 
-                    drawData.TextData.Add(new[] {
-                        new Data("절 토벌전", c),
-                        new Data("JOB"      , c),
-                        new Data("rDPS"     , c),
-                        new Data("BEST %"   , c),
-                        new Data("MED %"    , c),
-                        new Data("KILLs"    , c),
-                    });
-                    drawData.TextData.Add(null);
-
-                    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                    // Encounters
                     GameJob? targetJob;
-                    foreach (var (name, enc) in ultiEncounters)
+
+                    if (job != GameJob.Best)
                     {
-                        if (currentJob != GameJob.Best)
-                        {
-                            targetJob = currentJob;
-                        }
-                        else
-                        {
-                            targetJob =
-                                encounterData
-                                .Where(e => e.Key.EncounterId == enc)
-                                .OrderByDescending(e => e.Value.MaxPer)
-                                .Select(e => e.Key.JobId)
-                                .FirstOrDefault();
-                        }
+                        targetJob = job;
+                    }
+                    else
+                    {
+                        targetJob =
+                            encounterData
+                            .Where(e => e.Key.EncounterId == enc)
+                            .OrderByDescending(e => e.Value.MaxPer)
+                            .Select(e => e.Key.JobId)
+                            .FirstOrDefault();
+                    }
 
-                        var key = new EncounterDataKey
-                        {
-                            JobId = targetJob.Value,
-                            EncounterId = enc,
-                        };
+                    var key = new EncounterDataKey
+                    {
+                        JobId = targetJob.Value,
+                        EncounterId = enc,
+                    };
 
-                        if (targetJob.HasValue && encounterData.TryGetValue(key, out var encData))
-                        {
-                            var color = FFlogsColor.GetColor(encData.MaxPer);
-                            this.colorUlti[targetJob.Value] = color;
+                    var jobEncData = jobData.Encounter[enc];
 
-                            drawData.TextData.Add(new[]
-                            {
-                                new Data(name, c),
-                                new Data(targetJob.Value),
-                                new Data(encData.MaxRdps.ToString("#,##0.0"), color),
-                                new Data((Math.Floor(encData.MaxPer * 10) / 10).ToString("##0.0"), color),
-                                new Data((Math.Floor(encData.MedPer * 10) / 10).ToString("##0.0"), FFlogsColor.GetColor(encData.MedPer)),
-                                new Data(encData.Kills.ToString("#,##0"), c),
-                            });
-                        }
-                        else
-                        {
-                            drawData.TextData.Add(new[]
-                            {
-                                new Data(name, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                                new Data(string.Empty, c),
-                            });
-                        }
+                    if (targetJob.HasValue && encounterData.TryGetValue(key, out var encData))
+                    {
+                        var color = FFlogsColor.GetColor(encData.MaxPer);
+
+                        jobEncData.Job.SetByJob(targetJob.Value);
+                        jobEncData.Rdps   .Value = encData.MaxRdps.ToString("#,##0.0");
+                        jobEncData.BestPer.Value = (Math.Floor(encData.MaxPer * 10) / 10).ToString("##0.0");
+                        jobEncData.MedPer .Value = (Math.Floor(encData.MedPer * 10) / 10).ToString("##0.0");
+                        jobEncData.Kills  .Value = encData.Kills.ToString("#,##0");
+
+                        // ----------------------------------------------------------------------------------------------------
+
+                        var colorbestPer = FFlogsColor.GetColor(encData.MaxPer);
+                        jobEncData.Rdps.Color = colorbestPer;
+                        jobEncData.BestPer.Color = colorbestPer;
+
+                        jobEncData.MedPer.Color = FFlogsColor.GetColor(encData.MedPer);
+
+                        // ----------------------------------------------------------------------------------------------------
+
+
+
+                        jobEncData.Kills.ToolTip = $"{targetJob?.GetDescription()} : {encData.Kills}\n전체 : {raidKills[0]}";
+                    }
+                    else
+                    {
+                        jobEncData.Job    .Value = null;
+                        jobEncData.Rdps   .Value = null;
+                        jobEncData.BestPer.Value = null;
+                        jobEncData.MedPer .Value = null;
+                        jobEncData.Kills  .Value = null;
                     }
                 }
             }

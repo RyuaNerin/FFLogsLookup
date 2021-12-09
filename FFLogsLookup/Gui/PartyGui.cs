@@ -2,8 +2,15 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
+using Dalamud.Interface;
+using Dalamud.Logging;
 using FFLogsLookup.FFlogs;
 using FFLogsLookup.Game;
+using FFLogsLookup.Gui.Components;
+using FFLogsLookup.Utils;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using ImGuiNET;
 
 namespace FFLogsLookup.Gui
@@ -13,294 +20,577 @@ namespace FFLogsLookup.Gui
         private readonly DrawingData drawingData;
 
         public PartyGui(Plugin plugin)
-            : base(plugin, "FFLogsLookup: 캐릭터 정보 조회")
+            : base(plugin, "FFLogsLookup: 파티 정보 조회")
         {
-            this.drawingData = new(this);
+            this.drawingData = new DrawingData(this);
 
             this.Size = Vector2.Zero;
             this.Flags = ImGuiWindowFlags.AlwaysAutoResize;
             this.SizeCondition = ImGuiCond.Always;
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                this.OnClose();
+            }
+        }
+
+        private CancellationTokenSource ctsRefresh;
+        public override void OnOpen()
+        {
+            this.ctsRefresh?.Dispose();
+            this.ctsRefresh = new CancellationTokenSource();
+            Task.Factory.StartNew(() => this.Refresh(this.ctsRefresh.Token), this.ctsRefresh.Token);
+        }
+
+        public override void OnClose()
+        {
+            try
+            {
+                this.ctsRefresh?.Cancel();
+                this.ctsRefresh?.Dispose();
+            }
+            catch
+            {
+            }
+        }
+
+        private async void Refresh(CancellationToken token)
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    this.drawingData.Refresh();
+
+                    await Task.Delay(TimeSpan.FromSeconds(1), token);
+                }
+            }
+            catch
+            {
+            }
+        }
+
         public override void Draw()
         {
-
+            this.Size = new Vector2(this.drawingData.Draw(), -1);
         }
 
         private class DrawingData
         {
-            private static readonly (string name, float width)[] tableColumStr =
+            private static bool inited;
+
+            private static readonly CellData StrRank = new("RANK");
+            private static readonly CellData StrAvg = new("AVG %");
+            private static readonly CellData StrJob = new("JOB");
+            private static readonly CellData StrRdps = new("rDPS");
+            private static readonly CellData StrBestPer = new("BEST %");
+            private static readonly CellData StrDash = new("-");
+            private static readonly CellData StrNone = new("");
+
+            private static readonly CellData StrCharName = new("캐릭명");
+            private static readonly CellData StrServer = new("서버");
+            private static readonly CellData StrRaid = new("에덴 영식");
+            private static readonly CellData StrUlti = new("절 토벌전");
+            private static readonly CellData StrAllstar = new("올스타");
+
+            private static readonly CellData StrErrorIcon = new()
             {
-                ("Rank"  , -1),
-                ("AVG %" , -1),
-                ("rDPS"  , -1),
-                ("BEST %", -1),
-            };
-            private static readonly (string name, float width)[] tableRow0Str =
-            {
-                ("캐릭명"   , -1),
-                ("서버"     , -1),
-                ("에덴 영식", -1),
-                ("절 토벌전", -1),
-            };
-            private static readonly (string name, float width, GameEncounter enc)[] raidEncounters =
-            {
-                ("1층"     , -1, GameEncounter.E9s       ),
-                ("2층"     , -1, GameEncounter.E10s      ),
-                ("3층"     , -1, GameEncounter.E11s      ),
-                ("4층 전반", -1, GameEncounter.E12sDoor  ),
-                ("4층 후반", -1, GameEncounter.E12sOracle),
-            };
-            private static readonly (string name, float width, GameEncounter enc)[] ultiEncounters =
-            {
-                ("알렉산더", -1, GameEncounter.Tea ),
-                ("알테마"  , -1, GameEncounter.Ucob),
-                ("바하무트", -1, GameEncounter.Uwu ),
+                Value   = FontAwesomeExtensions.ToIconString(FontAwesomeIcon.ExclamationCircle),
+                FontPtr = UiBuilder.IconFont,
             };
 
-            private readonly PartyGui partyGui;
-            private readonly MemberData[] memberDatas = new MemberData[8];
+            private static readonly (CellData str, GameEncounter enc)[] raidEncounters =
+            {
+                (new("1층"     ), GameEncounter.E9s       ),
+                (new("2층"     ), GameEncounter.E10s      ),
+                (new("3층"     ), GameEncounter.E11s      ),
+                (new("4층 전반"), GameEncounter.E12sDoor  ),
+                (new("4층 후반"), GameEncounter.E12sOracle),
+            };
+            private static readonly (CellData str, GameEncounter enc)[] ultiEncounters =
+            {
+                (new("알렉산더"), GameEncounter.Tea ),
+                (new("알테마"  ), GameEncounter.Ucob),
+                (new("바하무트"), GameEncounter.Uwu ),
+            };
 
-            private readonly float columnDescWidth;
+            protected readonly PartyGui partyGui;
 
-            public float Width { get; set; }
+            private readonly List<MemberData> memberData = new();
+            private float columnFirstWidth;
 
             public DrawingData(PartyGui partyGui)
             {
                 this.partyGui = partyGui;
-
-                for (int idx = 0; idx < 8; idx++)
-                {
-                    this.memberDatas[idx] = new MemberData();
-                    this.Update(idx, null);
-                }
-
-                for (int idx = 0; idx < tableColumStr.Length; idx++)
-                {
-                    tableColumStr[idx].width = ImGui.CalcTextSize(tableColumStr[idx].name).X;
-                }
-
-                for (int idx = 0; idx < tableRow0Str.Length; idx++)
-                {
-                    tableRow0Str[idx].width = ImGui.CalcTextSize(tableRow0Str[idx].name).X;
-                }
-                for (int idx = 0; idx < raidEncounters.Length; idx++)
-                {
-                    raidEncounters[idx].width = ImGui.CalcTextSize(raidEncounters[idx].name).X;
-                }
-                for (int idx = 0; idx < ultiEncounters.Length; idx++)
-                {
-                    ultiEncounters[idx].width = ImGui.CalcTextSize(ultiEncounters[idx].name).X;
-                }
-
-                this.columnDescWidth = Math.Max(
-                    tableRow0Str.Max(e => e.width),
-                    Math.Max(
-                        raidEncounters.Max(e => e.width),
-                        ultiEncounters.Max(e => e.width)
-                    )
-                );
             }
 
-            public void Update(int idx, FFlogsLog log)
+            public unsafe void Refresh()
             {
-                this.memberDatas[idx].Update(log);
+                var partyList = (AddonPartyList*)DalamudInstance.GameGui.GetAddonByName("_PartyList", 1);
+                if (partyList == null) return;
 
-                this.Width = this.columnDescWidth + this.memberDatas.Sum(e => e.Width);
+                var idx = 0;
+
+                var memberList = new (string name, GameServer server)[8];
+
+                for (idx = 0; idx < 8; idx++)
+                {
+                    var member = partyList->PartyMember[idx];
+                    member.Name->
+                }
+
+                var newList = new int[8];
+                var newListIdx = 0;
+
+                lock (this.memberData)
+                {
+                    foreach (var member in memberList)
+                    {
+                        var cn = member.Name.TextValue;
+                        var cs = GameData.GetGameServer(member.World.GameData.Name);
+                        var key = $"{cn}@{cs}".GetHashCode(StringComparison.CurrentCultureIgnoreCase);
+
+                        newList[newListIdx++] = key;
+                        if (!this.memberData.Any(e => e.Key == key))
+                        {
+                            this.memberData.Add(new MemberData(this, key, cn, cs));
+                        }
+                    }
+
+                    idx = 0;
+                    while (idx < this.memberData.Count)
+                    {
+                        if (!newList.Any(e => e == this.memberData[idx].Key))
+                        {
+                            this.memberData[idx].Dispose();
+                            this.memberData.RemoveAt(idx);
+                        }
+                        else
+                        {
+                            idx++;
+                        }
+                    }
+
+                    this.memberData.Sort((a, b) => Array.IndexOf(newList, a).CompareTo(Array.IndexOf(newList, b)));
+                }
             }
-            private static void TextUnformattedCentered(string str, float width, float strWidth)
+
+            private readonly Spinner spinner = new()
             {
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (width - strWidth) / 2);
-                ImGui.TextUnformatted(str);
-            }
-            public void Draw()
+                Radius = 7,
+                Thickness = 3,
+            };
+            public float Draw()
             {
-                var partyCount = this.memberDatas.Count(e => e.Exists);
+                int idx;
 
-                ////////////////////////////////////////////////////////////////////////////////
+                var style = ImGui.GetStyle();
+                var padding = style.ItemSpacing.X * 2;
 
-                ImGui.Columns(1 + partyCount);
-
-                ImGui.SetColumnWidth(0, this.columnDescWidth);
-                TextUnformattedCentered(tableRow0Str[0].name, this.columnDescWidth, tableRow0Str[0].width);
-                TextUnformattedCentered(tableRow0Str[1].name, this.columnDescWidth, tableRow0Str[1].width);
-
-                for (int idx = 0; idx < 8; idx++)
+                if (!inited)
                 {
-                    var md = this.memberDatas[idx];
-                    if (!md.Exists) continue;
+                    inited = true;
 
-                    ImGui.SetColumnWidth(1 + idx, md.Width);
-
-                    ImGui.NextColumn();
-                    TextUnformattedCentered(md.CharName, md.Width, md.CharNameWidth);
-                    TextUnformattedCentered(md.CharServerStr, md.Width, md.CharServerWidth);
-                }
-                ImGui.Columns();
-
-                ////////////////////////////////////////////////////////////////////////////////
-
-                ImGui.Columns(1 + partyCount * 2);
-                ImGui.SetColumnWidth(0, this.columnDescWidth);
-
-                // 레이드
-                TextUnformattedCentered(tableRow0Str[2].name, this.columnDescWidth, tableRow0Str[2].width);
-                foreach (var (name, width, _) in raidEncounters)
-                {
-                    TextUnformattedCentered(name, this.columnDescWidth, width);
+                    this.columnFirstWidth = Mathx.Max(
+                        StrCharName.ValueWidth,
+                        StrServer.ValueWidth,
+                        StrRaid.ValueWidth,
+                        StrUlti.ValueWidth,
+                        StrAllstar.ValueWidth,
+                        raidEncounters.Max(e => e.str.ValueWidth),
+                        ultiEncounters.Max(e => e.str.ValueWidth)
+                    ) + padding;
                 }
 
-                // 절 토벌전
-                TextUnformattedCentered(tableRow0Str[3].name, this.columnDescWidth, tableRow0Str[3].width);
-                foreach (var (name, width, _) in ultiEncounters)
+                lock (this.memberData)
                 {
-                    TextUnformattedCentered(name, this.columnDescWidth, width);
-                }
+                    ImGui.Columns(1 + this.memberData.Count, "##grid-charname", false);
 
-                for (int idx = 0; idx < 8; idx++)
-                {
-                    var md = this.memberDatas[idx];
-                    if (!this.memberDatas[idx].Exists) continue;
+                    if (this.memberData.Count > 0)
+                    {
+                        ImGui.SetColumnWidth(0, this.columnFirstWidth);
+                    }
+                    StrCharName.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    StrServer.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
 
-                    ImGui.SetColumnWidth(1 + idx * 2, md.WidthColumn0);
-                    ImGui.SetColumnWidth(1 + idx * 2, md.WidthColumn1);
-                    ImGui.NextColumn();
+                    for (idx = 0; idx < this.memberData.Count; idx++)
+                    {
+                        var md = this.memberData[idx];
+                        lock (md.Lock)
+                        {
+                            ImGui.SetColumnWidth(1 + idx, md.Width);
+                        }
+                    }
 
-                    ///////////////////////////////////////////////////////////////////////////////////////////////
-                    // Column[0] = Rank
+                    for (idx = 0; idx < this.memberData.Count; idx++)
+                    {
+                        ImGui.NextColumn();
 
-                    // 올스타
-                    TextUnformattedCentered(tableColumStr[0].name, md.WidthColumn0, tableColumStr[0].width); // RANK
-                    TextUnformattedCentered(md.AllStar.Rank, this.columnDescWidth, md.AllStar.RankWidth);
+                        var md = this.memberData[idx];
+                        lock (md.Lock)
+                        {
+                            md.CharName.Draw(md.Width, padding, CellData.Align.Center);
+                            md.CharServer.Draw(md.Width, padding, CellData.Align.Center);
+                        }
+                    }
+                    ImGui.Columns();
+
+                    ImGui.Separator();
+
+                    ////////////////////////////////////////////////////////////////////////////////
+
+                    ImGui.Columns(1 + this.memberData.Count * 3, "##grid-chardata", true);
+                    if (this.memberData.Count > 0)
+                    {
+                        ImGui.SetColumnWidth(0, this.columnFirstWidth);
+                    }
 
                     // 레이드
-                    TextUnformattedCentered(tableColumStr[2].name, md.WidthColumn0, tableColumStr[2].width); // rDPS
-                    foreach (var (_, _, enc) in raidEncounters)
-                    {
-                        var ed = md.Encounter[enc];
+                    StrAllstar.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    StrNone.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    ImGui.Spacing();
 
-                        if (ed.Color.HasValue) ImGui.PushStyleColor(ImGuiCol.Text, ed.Color.Value);
-                        TextUnformattedCentered(ed.Rdps, md.WidthColumn0, ed.RdpsWidth);
-                        if (ed.Color.HasValue) ImGui.PopStyleColor();
+                    StrRaid.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (str, _) in raidEncounters)
+                    {
+                        str.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    }
+                    ImGui.Spacing();
+
+                    // 절 토벌전
+                    StrUlti.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
+                    ImGui.Spacing();
+                    foreach (var (str, _) in ultiEncounters)
+                    {
+                        str.Draw(this.columnFirstWidth, padding, CellData.Align.Center);
                     }
 
-                    // 절토벌전
-                    TextUnformattedCentered(tableColumStr[2].name, md.WidthColumn0, tableColumStr[2].width); // rDPS
-                    foreach (var (_, _, enc) in raidEncounters)
+                    float totalWidth = this.columnFirstWidth;
+                    for (idx = 0; idx < this.memberData.Count; idx++)
                     {
-                        var ed = md.Encounter[enc];
-
-                        if (ed.Color.HasValue) ImGui.PushStyleColor(ImGuiCol.Text, ed.Color.Value);
-                        TextUnformattedCentered(ed.Rdps, md.WidthColumn0, ed.RdpsWidth);
-                        if (ed.Color.HasValue) ImGui.PopStyleColor();
+                        var md = this.memberData[idx];
+                        lock (md.Lock)
+                        {
+                            totalWidth += md.Width;
+                            ImGui.SetColumnWidth(1 + idx * 3, md.WidthJob);
+                            ImGui.SetColumnWidth(2 + idx * 3, md.WidthRdps);
+                            ImGui.SetColumnWidth(3 + idx * 3, md.WidthBestPer);
+                        }
                     }
 
-                    ///////////////////////////////////////////////////////////////////////////////////////////////
-                    // Column[1] = rDPS
-
-                    ImGui.NextColumn();
-
-                    TextUnformattedCentered(tableColumStr[1].name, md.WidthColumn0, tableColumStr[1].width); // AVG %
-                    TextUnformattedCentered(md.AllStar.BestAvg, md.WidthColumn0, md.AllStar.BestAvgWidth);
-
-                    // 레이드
-                    TextUnformattedCentered(tableColumStr[3].name, md.WidthColumn0, tableColumStr[3].width); // BEST %
-                    foreach (var (_, _, enc) in raidEncounters)
+                    for (idx = 0; idx < this.memberData.Count; idx++)
                     {
-                        var ed = md.Encounter[enc];
+                        var isLast = idx == this.memberData.Count - 1;
 
-                        if (ed.Color.HasValue) ImGui.PushStyleColor(ImGuiCol.Text, ed.Color.Value);
-                        TextUnformattedCentered(ed.Rdps, md.WidthColumn1, ed.RdpsWidth);
-                        if (ed.Color.HasValue) ImGui.PopStyleColor();
+                        var md = this.memberData[idx];
+                        lock (md.Lock)
+                        {
+
+                            ImGui.NextColumn();
+
+                            if (md.Status == MemberData.Statuses.Loading)
+                            {
+                                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (md.WidthRdps - this.spinner.Radius * 2) / 2);
+                                this.spinner.Draw();
+
+                                continue;
+                            }
+                            else if (md.Status == MemberData.Statuses.Error)
+                            {
+                                StrErrorIcon.Draw(md.Width, padding, CellData.Align.Center);
+
+                                continue;
+                            }
+
+                            /////////////////////////////////////////////////////////////////////////////////////////////// Job
+
+                            // 올스타
+                            StrJob.Draw(md.WidthRdps, padding, CellData.Align.Center);
+                            ImGui.Spacing();
+                            md.AllStar.Job.Draw(md.WidthRdps, padding, CellData.Align.Center);
+                            ImGui.Spacing();
+
+                            // 레이드
+                            StrJob.Draw(md.WidthRdps, StrRdps.ValueWidth, CellData.Align.Center);
+                            ImGui.Spacing();
+                            foreach (var (_, enc) in raidEncounters)
+                            {
+                                md.Encounter[enc].Job.Draw(md.WidthRdps, padding, CellData.Align.Center);
+                            }
+                            ImGui.Spacing();
+
+                            // 절토벌전
+                            StrJob.Draw(md.WidthRdps, StrRdps.ValueWidth, CellData.Align.Center);
+                            ImGui.Spacing();
+                            foreach (var (_, enc) in ultiEncounters)
+                            {
+                                md.Encounter[enc].Job.Draw(md.WidthRdps, padding, CellData.Align.Center);
+                            }
+
+                            /////////////////////////////////////////////////////////////////////////////////////////////// Rank , rDPS
+
+                            // 올스타
+                            StrRank.Draw(md.WidthRdps, padding, CellData.Align.Center); // RANK
+                            ImGui.Spacing();
+                            md.AllStar.Job.Draw(md.WidthRdps, padding, CellData.Align.Center);
+                            ImGui.Spacing();
+
+                            // 레이드
+                            StrRdps.Draw(md.WidthRdps, StrRdps.ValueWidth, CellData.Align.Center); // rDPS
+                            ImGui.Spacing();
+                            foreach (var (_, enc) in raidEncounters)
+                            {
+                                md.Encounter[enc].Rdps.Draw(md.WidthRdps, padding, CellData.Align.Right);
+                            }
+                            ImGui.Spacing();
+
+                            // 절토벌전
+                            StrRdps.Draw(md.WidthRdps, StrRdps.ValueWidth, CellData.Align.Center); // rDPS
+                            ImGui.Spacing();
+                            foreach (var (_, enc) in ultiEncounters)
+                            {
+                                md.Encounter[enc].Rdps.Draw(md.WidthRdps, padding, CellData.Align.Right);
+                            }
+
+                            /////////////////////////////////////////////////////////////////////////////////////////////// AVG % / BEST %
+
+                            ImGui.NextColumn();
+
+                            StrAvg.Draw(md.WidthBestPer, StrAvg.ValueWidth, CellData.Align.Center); // AVG %
+                            if (isLast) ImGui.Separator(); else ImGui.Spacing();
+                            md.AllStar.BestAvg.Draw(md.WidthBestPer, padding, CellData.Align.Right);
+                            if (isLast) ImGui.Separator(); else ImGui.Spacing();
+
+                            // 레이드
+                            StrBestPer.Draw(md.WidthBestPer, padding, CellData.Align.Center); // BEST %
+                            if (isLast) ImGui.Separator(); else ImGui.Spacing();
+                            foreach (var (_, enc) in raidEncounters)
+                            {
+                                md.Encounter[enc].BestPer.Draw(md.WidthRdps, padding, CellData.Align.Right);
+                            }
+                            if (isLast) ImGui.Separator(); else ImGui.Spacing();
+
+                            // 절토벌전
+                            StrBestPer.Draw(md.WidthBestPer, padding, CellData.Align.Center); // BEST %
+                            if (isLast) ImGui.Separator(); else ImGui.Spacing();
+                            foreach (var (_, enc) in ultiEncounters)
+                            {
+                                md.Encounter[enc].BestPer.Draw(md.WidthRdps, padding, CellData.Align.Right);
+                            }
+                        }
                     }
 
-                    // 절토벌전
-                    TextUnformattedCentered(tableColumStr[3].name, md.WidthColumn0, tableColumStr[3].width); // BEST %
-                    foreach (var (_, _, enc) in raidEncounters)
-                    {
-                        var ed = md.Encounter[enc];
+                    ImGui.Columns();
 
-                        if (ed.Color.HasValue) ImGui.PushStyleColor(ImGuiCol.Text, ed.Color.Value);
-                        TextUnformattedCentered(ed.Rdps, md.WidthColumn1, ed.RdpsWidth);
-                        if (ed.Color.HasValue) ImGui.PopStyleColor();
-                    }
-                }
-                ImGui.Columns();
-
-                static void WriteData(MemberData.EncounterData encounterData, float width)
-                {
+                    return totalWidth;
                 }
             }
 
-            public class MemberData
+            public class MemberData : IDisposable
             {
-                private static readonly GameEncounter[] encounterList =
+                public const float MinWidth = 20;
+
+                public enum Statuses
                 {
-                    GameEncounter.E9s,
-                    GameEncounter.E10s,
-                    GameEncounter.E11s,
-                    GameEncounter.E12sDoor,
-                    GameEncounter.E12sOracle,
-                    GameEncounter.Tea,
-                    GameEncounter.Ucob,
-                    GameEncounter.Uwu,
-                };
+                    Loading,
+                    Ok,
+                    Error,
+                }
 
-                public bool Exists { get; set; }
+                public object Lock { get; } = new();
 
-                public string CharName      { get; set; }
-                public float  CharNameWidth { get; set; }
+                public Statuses Status { get; set; }
 
-                public GameServer CharServer      { get; set; }
-                public string     CharServerStr   { get; set; }
-                public float      CharServerWidth { get; set; }
+                public int Key { get; }
 
-                public float Width { get; set; }
-                public float WidthColumn0 { get; set; }
-                public float WidthColumn1 { get; set; }
+                public CellData CharName   { get; }
+                public CellData CharServer { get; }
 
                 public struct AllstarData
                 {
-                    public GameJob? Job   { get; set; }
-                    public Vector4? Color { get; set; }
- 
-                    public string BestAvg        { get; set; }
-                    public float  BestAvgWidth   { get; set; }
-                    public string BestAvgTooltip { get; set; }
-
-                    public string Rank        { get; set; }
-                    public float  RankWidth   { get; set; }
-                    public string RankTooltip { get; set; }
+                    public CellData Job     { get; set; } 
+                    public CellData BestAvg { get; set; }
+                    public CellData Rank    { get; set; }
                 }
                 public struct EncounterData
                 {
-                    public GameJob? Job   { get; set; }
-                    public Vector4? Color { get; set; }
-
-                    public string Rdps        { get; set; }
-                    public float  RdpsWidth   { get; set; }
-                    public string RdpsTooltip { get; set; }
-
-                    public string MaxPer        { get; set; }
-                    public float  MaxPerWidth   { get; set; }
-                    public string MaxPerTooltip { get; set; }
+                    public CellData Job     { get; set; }
+                    public CellData Rdps    { get; set; }
+                    public CellData BestPer { get; set; }
                 }
                 public AllstarData AllStar { get; set; }
                 public Dictionary<GameEncounter, EncounterData> Encounter { get; } = new();
 
-                public void Update(FFlogsLog log)
+                private readonly CancellationTokenSource cancellationTokenSource = new();
+
+                private readonly DrawingData drawingData;
+
+                public MemberData(DrawingData drawingData, int key, string charName, GameServer gameServer)
                 {
-                    log ??= FFlogsLog.Empty;
+                    this.drawingData = drawingData;
 
-                    this.Exists = log != null;
+                    this.Key = key;
+                    this.CharName = new(charName);
+                    this.CharServer = new(gameServer.S());
 
-                    this.CharName = log.CharName;
+                    var token = this.cancellationTokenSource.Token;
+                    _ = Task.Factory.StartNew(async () =>
+                    {
+                        try
+                        {
+                            var (log, cached) = await this.drawingData.partyGui.plugin.FFlogsClient.GetLogs(charName,gameServer, false, token);
+                            token.ThrowIfCancellationRequested();
 
-                    this.CharServer    = log.CharServer;
-                    this.CharServerStr = log.CharServer.S();
+                            var forced = false;
+                            try
+                            {
+                                lock (this.Lock)
+                                {
+                                    this.Status = Statuses.Ok;
+                                    this.Update(log);
+                                }
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                PluginLog.Error(ex, $"{nameof(DetailGui)}.{nameof(this.Update)}");
+                                forced = true;
+                            }
 
-                    ////////////////////////////////////////////////////////////////////////////////////////////////////
+                            // 1시간 이전에 갱신된 거면 다시 불러오기
+                            if (forced || (cached && log.UpdatedAtUtc < DateTime.UtcNow.AddHours(-1)))
+                            {
+                                (log, _) = await this.drawingData.partyGui.plugin.FFlogsClient.GetLogs(charName, gameServer, true, token);
+                                token.ThrowIfCancellationRequested();
 
+                                lock (this.Lock)
+                                {
+                                    this.Status = Statuses.Ok;
+                                    this.Update(log);
+                                }
+                            }
+                        }
+                        catch (TaskCanceledException)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                            PluginLog.Error(ex, $"{nameof(DetailGui)}.{nameof(this.Update)}");
+                            lock (this.Lock)
+                            {
+                                this.Status = Statuses.Error;
+                            }
+                        }
+                    });
+                }
+                
+                ~MemberData()
+                {
+                    this.Dispose(false);
+                }
+
+                public void Dispose()
+                {
+                    this.Dispose(true);
+                    GC.SuppressFinalize(this);
+                }
+                private bool disposed;
+                protected void Dispose(bool disposing)
+                {
+                    if (this.disposed) return;
+                    this.disposed = true;
+
+                    if (disposing)
+                    {
+                        this.cancellationTokenSource.Cancel();
+                        this.cancellationTokenSource.Dispose();
+                    }
+                }
+
+                private float? width;
+                public float Width
+                {
+                    get
+                    {
+                        this.CalcWidth();
+                        return this.width.Value;
+                    }
+                }
+
+                private float widthRdps;
+                public float WidthRdps
+                {
+                    get
+                    {
+                        this.CalcWidth();
+                        return this.widthRdps;
+                    }
+                }
+
+                private float widthBestPer;
+                public float WidthBestPer
+                {
+                    get
+                    {
+                        this.CalcWidth();
+                        return this.widthBestPer;
+                    }
+                }
+
+                private float widthJob;
+                public float WidthJob
+                {
+                    get
+                    {
+                        this.CalcWidth();
+                        return this.widthJob;
+                    }
+                }
+
+                private void CalcWidth()
+                {
+                    lock (this.Lock)
+                    {
+                        if (this.width.HasValue) return;
+
+                        var style = ImGui.GetStyle();
+                        var padding = style.ItemSpacing.X * 2;
+
+                        this.widthJob = Math.Max(this.Encounter.Max(e => e.Value.Job.ValueWidth), StrJob.ValueWidth) + padding;
+                        this.widthRdps = Math.Max(this.Encounter.Max(e => e.Value.Rdps.ValueWidth), StrRdps.ValueWidth) + padding;
+                        this.widthBestPer = Math.Max(this.Encounter.Max(e => e.Value.BestPer.ValueWidth), StrBestPer.ValueWidth) + padding;
+
+                        this.width = Mathx.Max(
+                            this.CharName.ValueWidth,
+                            this.CharServer.ValueWidth,
+                            this.widthJob + this.WidthRdps + this.WidthBestPer,
+                            MinWidth
+                        );
+
+                        this.widthRdps = (float)(Math.Floor(this.width.Value - this.widthJob) / (this.widthRdps + this.widthBestPer) * this.widthRdps);
+                        this.widthBestPer = this.width.Value - this.widthJob - this.widthRdps;
+                    }
+                }
+
+                private void Update(FFlogsLog log)
+                {
+                    lock (this.Lock)
+                    {
+                        this.width = null;
+                        this.UpdateInternal(log);
+                    }
+                }
+
+                private void UpdateInternal(FFlogsLog log)
+                {
                     // 전체 클리어 횟수 미리 계산하기
                     var raidKills =
                         log.EncountersNe
@@ -318,10 +608,9 @@ namespace FFLogsLookup.Gui
                     {
                         this.AllStar = new AllstarData()
                         {
-                            Job     = null,
-                            Color   = null,
-                            BestAvg = "-",
-                            Rank    = "-",
+                            Job     = StrNone,
+                            BestAvg = StrDash,
+                            Rank    = StrDash,
                         };
                     }
                     else
@@ -341,69 +630,41 @@ namespace FFLogsLookup.Gui
 
                         this.AllStar = new AllstarData
                         {
-                            Job   = allstarJobBest,
-                            Color = color,
-                                
-                            BestAvg        = $"{bestAvg:#0.0}",
-                            BestAvgTooltip = $"{allstarJobBest.S()} : {killsTotal:#,##0} 킬\n전체 : {raidKills[0]:#,##0} Kills",
-
-                            Rank        = $"{allstarData.Rank:#,##0}",
-                            RankTooltip = $"상위 {rankPercent:##0.0} %%\n전체 {allstarData.Total:#,##0} 명",
+                            Job = new CellData(allstarJobBest),
+                            BestAvg = new CellData
+                            {
+                                Value   = $"{bestAvg:#0.0}",
+                                Color   = color,
+                                ToolTip = $"{allstarJobBest.GetDescription()} : {killsTotal:#,##0} 킬\n전체 : {raidKills[0]:#,##0} Kills"
+                            },
+                            Rank = new CellData
+                            {
+                                Value   = $"{allstarData.Rank:#,##0}",
+                                Color   = color,
+                                ToolTip = $"상위 {rankPercent:##0.0} %%\n전체 {allstarData.Total:#,##0} 명",
+                            },
                         };
                     }
 
-                    foreach (var enc in encounterList)
-                    {
-                        UpdateEncounter(enc);
-                    }
-
-                    ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                    var allStar = this.AllStar;
-                    allStar.BestAvgWidth = ImGui.CalcTextSize(allStar.BestAvg).X;
-                    allStar.RankWidth    = ImGui.CalcTextSize(allStar.Rank).X;
-                    this.AllStar = allStar;
-
-                    this.CharNameWidth = ImGui.CalcTextSize(this.CharName).X;
-                    this.CharServerWidth = ImGui.CalcTextSize(this.CharServerStr).X;
-
-                    foreach (var enc in encounterList)
-                    {
-                        var d = this.Encounter[enc];
-                        d.RdpsWidth   = ImGui.CalcTextSize(d.Rdps).X;
-                        d.MaxPerWidth = ImGui.CalcTextSize(d.MaxPer).X;
-
-                        this.Encounter[enc] = d;
-                    }
-
-                    this.WidthColumn0 = this.Encounter.Max(e => e.Value.RdpsWidth);
-                    this.WidthColumn1 = this.Encounter.Max(e => e.Value.MaxPerWidth);
-
-                    this.Width = Math.Max(
-                        Math.Max(
-                            this.CharNameWidth,
-                            this.CharServerWidth
-                        ),
-                        this.WidthColumn0 + this.WidthColumn1
-                    );
+                    foreach (var (_, enc) in raidEncounters) UpdateEncounter(enc);
+                    foreach (var (_, enc) in ultiEncounters) UpdateEncounter(enc);
 
                     ////////////////////////////////////////////////////////////////////////////////////////////////////
 
                     void UpdateEncounter(GameEncounter enc)
                     {
-                        GameJob? bestPerfJob =
+                        var bestPerfJob =
                             log.EncountersNe
                             .Where(e => e.Key.EncounterId == enc)
                             .OrderByDescending(e => e.Value.MaxPer)
                             .Select(e => e.Key.JobId)
                             .FirstOrDefault();
 
-                        if (!bestPerfJob.HasValue)
+                        if (bestPerfJob == GameJob.None || bestPerfJob == GameJob.Best)
                         {
                             this.Encounter[enc] = new EncounterData
                             {
-                                Job = null,
-                                Color = null,
+                                Job = new CellData(),
                             };
                         }
                         else
@@ -411,19 +672,25 @@ namespace FFLogsLookup.Gui
                             var encData = log.EncountersNe[new EncounterDataKey
                             {
                                 EncounterId = enc,
-                                JobId = bestPerfJob.Value,
+                                JobId = bestPerfJob,
                             }];
 
+                            var color = FFlogsColor.GetColor(encData.MaxPer);
                             this.Encounter[enc] = new EncounterData
                             {
-                                Job = bestPerfJob,
-                                Color = FFlogsColor.GetColor(encData.MaxPer),
-
-                                Rdps = $"{encData.MaxRdps:#,##0.0}",
-                                RdpsTooltip = $"{bestPerfJob?.S()} : {encData.Kills:#,##0} 킬\n전체 : {raidKills[enc]:#,##0} Kills",
-
-                                MaxPer = $"{(Math.Floor(encData.MaxPer * 10) / 10):#0.0}",
-                                MaxPerTooltip = $"MedPer : {(Math.Floor(encData.MaxPer * 10) / 10):#0.0}",
+                                Job = new CellData(bestPerfJob),
+                                Rdps = new CellData
+                                {
+                                    Value   = $"{encData.MaxRdps:#,##0.0}",
+                                    Color   = color,
+                                    ToolTip = $"{bestPerfJob.GetDescription()} : {encData.Kills:#,##0} 킬\n전체 : {raidKills[enc]:#,##0} Kills",
+                                },
+                                BestPer = new CellData
+                                {
+                                    Value   = $"{(Math.Floor(encData.MaxPer * 10) / 10):#0.0}",
+                                    Color   = color,
+                                    ToolTip = $"Max : {(Math.Floor(encData.MaxPer * 10) / 10):##0.0} %%\nMed : {(Math.Floor(encData.MedPer * 10) / 10):##0.0} %%",
+                                }
                             };
                         }
                     }
